@@ -1,0 +1,131 @@
+
+name: Pipeline DevSecOps S-SDLC (Gitleaks + SAST Bandit + SCA + Docker Build)
+
+
+# Se ejecuta automáticamente en cada push o pull request hacia la rama principal
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+
+permissions:
+  contents: read
+
+
+jobs:
+  # ============================================================================
+  # FASE 1: DETECCIÓN AUTOMÁTICA DE SECRETOS EXPUESTOS (Cumplimiento RDS-02)
+  # ============================================================================
+  escaneo_secretos_rds02:
+    name: "RDS-02 | Escaneo de Secretos (Gitleaks)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código fuente e historial Git
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+
+      - name: Ejecutar auditoría de secretos con Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+  # ============================================================================
+  # FASE 2: ANÁLISIS ESTÁTICO DE SEGURIDAD - SAST (Cumplimiento RDS-03)
+  # ============================================================================
+  analisis_sast_rds03:
+    name: "RDS-03 | Análisis Estático SAST Python (Bandit)"
+    runs-on: ubuntu-latest
+    needs: escaneo_secretos_rds02
+    steps:
+      - name: Descargar código fuente
+        uses: actions/checkout@v4
+
+
+      - name: Configurar entorno Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+
+      - name: Instalar herramienta SAST Bandit
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit[toml]
+
+
+      - name: Ejecutar escaneo SAST sobre la capa Backend (/backend)
+        run: |
+          # Escanea todo el código en /backend buscando vulnerabilidades de severidad Media o Alta (-ll)
+          bandit -r backend/ -ll -ii -f custom
+
+
+      - name: Generar reporte de evidencia SAST para el informe IEEE
+        if: always()
+        run: |
+          bandit -r backend/ -f json -o reporte_sast_bandit.json || true
+
+
+      - name: Publicar artefacto de evidencia SAST
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencia-sast-bandit
+          path: reporte_sast_bandit.json
+
+
+  # ============================================================================
+  # FASE 3: ANÁLISIS DE COMPOSICIÓN DE SOFTWARE - SCA (Cumplimiento RDS-03)
+  # ============================================================================
+  analisis_sca_dependencias:
+    name: "RDS-03 | Auditoría SCA de Librerías (pip-audit)"
+    runs-on: ubuntu-latest
+    needs: escaneo_secretos_rds02
+    steps:
+      - name: Descargar código fuente
+        uses: actions/checkout@v4
+
+
+      - name: Configurar entorno Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+
+      - name: Instalar dependencias y pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+          pip install -r requirements.txt
+
+
+      - name: Auditar librerías de terceros contra vulnerabilidades CVE conocidas
+        # Se ignora caché local y se genera reporte de composición de software
+        run: |
+          pip-audit -r requirements.txt --desc on || true
+
+
+  # ============================================================================
+  # FASE 4: VERIFICACIÓN DE CONSTRUCCIÓN DE CONTENEDOR SEGURO (Pre-Deploy)
+  # ============================================================================
+  verificacion_contenedor_docker:
+    name: "Pre-Deploy | Construcción y Prueba de Imagen Docker"
+    runs-on: ubuntu-latest
+    needs: [analisis_sast_rds03, analisis_sca_dependencias]
+    steps:
+      - name: Descargar código fuente
+        uses: actions/checkout@v4
+
+
+      - name: Construir imagen Docker endurecida (No-Root + Gunicorn)
+        run: |
+          docker build -t atelier-disfraces-ssdklc:latest .
+
+
+      - name: Verificar sintaxis y módulos del Backend dentro del contenedor
+        run: |
+          docker run --rm atelier-disfraces-ssdklc:latest python -m py_compile backend/config.py backend/models.py backend/forms.py backend/app.py

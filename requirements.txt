@@ -1,0 +1,9 @@
+Flask==3.0.3
+Flask-SQLAlchemy==3.1.1
+SQLAlchemy==2.0.45
+psycopg2-binary==2.9.12
+Flask-WTF==1.2.1
+WTForms==3.1.2
+bcrypt==4.2.0
+python-dotenv==1.0.1
+gunicorn==23.0.0

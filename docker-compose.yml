@@ -1,0 +1,65 @@
+services:
+  # ---------------------------------------------------------------------------
+  # CAPA DE DATOS: PostgreSQL 16 (Totalmente aislada del exterior - RNF-01)
+  # ---------------------------------------------------------------------------
+  postgres_db:
+    image: postgres:16-alpine
+    container_name: atelier_postgres_aislado
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-atelier_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-AtelierPass#2026!}
+      POSTGRES_DB: ${POSTGRES_DB:-alquiler_disfraces_db}
+    volumes:
+      - pgdata_atelier:/var/lib/postgresql/data
+    networks:
+      - red_aislada_datos
+    # NOTA DE SEGURIDAD (RNF-01): NO se declara 'ports:'.
+    # El puerto 5432 NO está expuesto ni al host ni a Internet.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atelier_app} -d ${POSTGRES_DB:-alquiler_disfraces_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+  # ---------------------------------------------------------------------------
+  # CAPA DE APLICACIÓN Y PRESENTACIÓN: Flask + Gunicorn + Jinja2
+  # ---------------------------------------------------------------------------
+  flask_backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: atelier_flask_gunicorn
+    restart: unless-stopped
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    environment:
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-llave_local_desarrollo_seguro_64_caracteres_hexadecimales_2026}
+      # Nota: Dentro de la red privada de Docker, el host ya no es 127.0.0.1, sino el nombre del servicio: 'postgres_db'
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-atelier_app}:${POSTGRES_PASSWORD:-AtelierPass#2026!}@postgres_db:5432/${POSTGRES_DB:-alquiler_disfraces_db}
+      SESSION_TIMEOUT_MINUTES: ${SESSION_TIMEOUT_MINUTES:-30}
+      COOKIE_SECURE: "False"
+    ports:
+      # Expone la aplicación web únicamente en la interfaz local de tu máquina Bazzite
+      - "127.0.0.1:5000:5000"
+    networks:
+      - red_publica_web
+      - red_aislada_datos
+
+
+# -----------------------------------------------------------------------------
+# SEGMENTACIÓN DE RED Y VOLÚMENES PERSISTENTES (RNF-01)
+# -----------------------------------------------------------------------------
+networks:
+  red_publica_web:
+    driver: bridge
+  red_aislada_datos:
+    driver: bridge
+    internal: true  # Bloquea toda salida o entrada desde Internet hacia esta subred
+
+
+volumes:
+  pgdata_atelier:
+

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Iniciar Sesión — Atelier Alquiler de Disfraces{% endblock %}
+
+{% block content %}
+<section class="row justify-content-center align-items-center py-4 animate-reveal" aria-labelledby="titulo-login">
+    <article class="col-12 col-sm-10 col-md-7 col-lg-5 surface-card p-0">
+        <header class="section-header-bar">
+            <h1 id="titulo-login" class="h5 mb-0 d-flex align-items-center gap-2">
+                <svg class="icon-svg" aria-hidden="true">
+                    <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-shield"></use>
+                </svg>
+                <span>Acceso de Personal Interno</span>
+            </h1>
+            <span class="status-pill status-disponible">TLS / Bcrypt</span>
+        </header>
+
+        <form method="POST" action="{{ url_for('login') }}" class="p-4" novalidate>
+            <!-- Token Anti-CSRF obligatorio (RS-10) -->
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else session.get('csrf_token', '') | e }}">
+
+            <fieldset class="border-0 p-0 m-0">
+                <legend class="visually-hidden">Credenciales de acceso al sistema</legend>
+
+                <p class="mb-3">
+                    <label for="login-username" class="form-label">Nombre de Usuario</label>
+                    <input
+                        type="text"
+                        id="login-username"
+                        name="username"
+                        class="form-control"
+                        required
+                        maxlength="30"
+                        pattern="[a-zA-Z0-9_]{4,30}"
+                        autocomplete="username"
+                        aria-describedby="hint-username"
+                        placeholder="Ej. admin_seguro">
+                    <small id="hint-username" class="form-hint">Ingrese su identificador asignado (4 a 30 caracteres alfanuméricos).</small>
+                </p>
+
+                <p class="mb-4">
+                    <label for="login-password" class="form-label">Contraseña</label>
+                    <input
+                        type="password"
+                        id="login-password"
+                        name="password"
+                        class="form-control"
+                        required
+                        minlength="8"
+                        autocomplete="current-password"
+                        aria-describedby="hint-seguridad-login"
+                        placeholder="••••••••••••">
+                    <small id="hint-seguridad-login" class="form-hint">
+                        Protección activa: la cuenta se bloqueará por 15 minutos tras 5 intentos fallidos consecutivos (RS-03).
+                    </small>
+                </p>
+
+                <button type="submit" class="btn btn-terracotta w-100">
+                    Autenticar e Ingresar al Sistema
+                </button>
+            </fieldset>
+        </form>
+
+        <footer class="px-4 py-3 surface-sand border-top border-0 rounded-bottom small text-taupe text-center">
+            Sesiones gestionadas con cookies <code>HttpOnly</code> y <code>SameSite=Strict</code> (RS-04).
+        </footer>
+    </article>
+</section>
+{% endblock %}

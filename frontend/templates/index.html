@@ -1,0 +1,788 @@
+{% extends "base.html" %}
+
+{% block title %}Panel Operativo — Atelier Alquiler de Disfraces{% endblock %}
+
+{% block content %}
+
+<!-- ==========================================================================
+     1. BARRA DE ACCIONES RÁPIDAS Y OPERACIONES MEDIANTE <dialog> NATIVOS
+     ========================================================================== -->
+<section class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 animate-reveal" aria-labelledby="titulo-panel">
+    <header>
+        <h1 id="titulo-panel" class="h4 mb-1">Gestión de Inventario, Garantías y Alquileres</h1>
+        <p class="text-taupe small mb-0">Operación en tiempo real con trazabilidad inmutable y validación de listas blancas.</p>
+    </header>
+
+    <nav class="d-flex flex-wrap gap-2" aria-label="Acciones operativas principales">
+        <button type="button" class="btn btn-outline-warm" data-dialog-open="dialog-nuevo-disfraz">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-plus"></use>
+            </svg>
+            <span>Registrar Disfraz</span>
+        </button>
+
+        <button type="button" class="btn btn-terracotta" data-dialog-open="dialog-emitir-ticket">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-ticket"></use>
+            </svg>
+            <span>Emitir Ticket de Alquiler</span>
+        </button>
+
+        {% if session.get('rol') == 'Administrador' %}
+        <button type="button" class="btn btn-slate" data-dialog-open="dialog-gestion-usuarios">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-users"></use>
+            </svg>
+            <span>Personal (RBAC)</span>
+        </button>
+        {% endif %}
+    </nav>
+</section>
+
+<!-- ==========================================================================
+     2. INDICADORES OPERATIVOS DEL ADMINISTRADOR (RF-07 / RS-05)
+     ========================================================================== -->
+{% if session.get('rol') == 'Administrador' and metricas %}
+<aside class="row g-3 mb-4 animate-reveal delay-1" aria-label="Indicadores clave del negocio">
+    <article class="col-12 col-sm-6 col-lg-3">
+        <section class="surface-card surface-card-interactive p-3 h-100">
+            <h2 class="small text-taupe text-uppercase mb-1">Alquileres Activos</h2>
+            <p class="h3 fw-bold mb-0">{{ metricas.alquilados_activos | e }}</p>
+            <small class="text-taupe">Prendas entregadas a clientes</small>
+        </section>
+    </article>
+
+    <article class="col-12 col-sm-6 col-lg-3">
+        <section class="surface-card surface-card-interactive p-3 h-100">
+            <h2 class="small text-taupe text-uppercase mb-1">Alquileres Vencidos</h2>
+            <p class="h3 fw-bold mb-0" style="color: var(--accent-crimson);">{{ metricas.vencidos | e }}</p>
+            <small class="text-taupe">Pendientes de retorno</small>
+        </section>
+    </article>
+
+    <article class="col-12 col-sm-6 col-lg-3">
+        <section class="surface-card surface-card-interactive p-3 h-100">
+            <h2 class="small text-taupe text-uppercase mb-1">Lavandería o Reparación</h2>
+            <p class="h3 fw-bold mb-0" style="color: var(--accent-amber);">{{ metricas.en_lavanderia | e }}</p>
+            <small class="text-taupe">No disponibles temporalmente</small>
+        </section>
+    </article>
+
+    <article class="col-12 col-sm-6 col-lg-3">
+        <section class="surface-card surface-card-interactive p-3 h-100">
+            <h2 class="small text-taupe text-uppercase mb-1">Garantías (Custodia / Retenido)</h2>
+            <p class="h4 fw-bold mb-0" style="color: var(--accent-olive);">
+                ${{ "%.2f"|format(metricas.garantias_custodia | float) }}
+                <span class="text-taupe fw-normal">/</span>
+                ${{ "%.2f"|format(metricas.ingresos_retenciones | float) }}
+            </p>
+            <small class="text-taupe">Depósitos activos vs. multas</small>
+        </section>
+    </article>
+</aside>
+{% endif %}
+
+<!-- ==========================================================================
+     3. CATÁLOGO Y FILTRO EN TIEMPO REAL DE INVENTARIO (RF-03, RF-04)
+     ========================================================================== -->
+<section class="surface-card mb-4 animate-reveal delay-1" aria-labelledby="titulo-catalogo">
+    <header class="section-header-bar">
+        <h2 id="titulo-catalogo" class="h6 mb-0 d-flex align-items-center gap-2">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-hanger"></use>
+            </svg>
+            <span>Catálogo e Inventario de Disfraces Disponibles</span>
+        </h2>
+        <span class="small text-taupe">Consultas parametrizadas (RS-08)</span>
+    </header>
+
+    <section class="p-3 p-md-4">
+        <!-- Formulario Semántico de Búsqueda (RF-04) -->
+        <form method="GET" action="{{ url_for('index') }}" role="search" aria-label="Filtrar disponibilidad de disfraces" class="surface-sand p-3 mb-4">
+            <fieldset class="row g-3 align-items-end border-0 p-0 m-0">
+                <legend class="visually-hidden">Criterios de filtrado de catálogo</legend>
+
+                <p class="col-12 col-md-4 mb-0">
+                    <label for="filtro-sku" class="form-label">Código SKU</label>
+                    <input
+                        type="text"
+                        id="filtro-sku"
+                        name="sku"
+                        value="{{ request.args.get('sku', '') | e }}"
+                        class="form-control"
+                        placeholder="Ej. DIS-VAMP-001"
+                        maxlength="20">
+                </p>
+
+                <p class="col-12 col-md-3 mb-0">
+                    <label for="filtro-categoria" class="form-label">Categoría</label>
+                    <input
+                        type="text"
+                        id="filtro-categoria"
+                        name="categoria"
+                        value="{{ request.args.get('categoria', '') | e }}"
+                        class="form-control"
+                        placeholder="Ej. Terror, Histórico..."
+                        maxlength="40">
+                </p>
+
+                <p class="col-12 col-md-3 mb-0">
+                    <label for="filtro-talla" class="form-label">Talla</label>
+                    <select id="filtro-talla" name="talla" class="form-select">
+                        <option value="">Todas las tallas</option>
+                        {% for talla_opt in ['XS', 'S', 'M', 'L', 'XL', 'Unica'] %}
+                        <option value="{{ talla_opt | e }}" {% if request.args.get('talla') == talla_opt %}selected{% endif %}>
+                            {{ talla_opt | e }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </p>
+
+                <p class="col-12 col-md-2 mb-0 d-flex gap-2">
+                    <button type="submit" class="btn btn-slate w-100">
+                        <svg class="icon-svg" aria-hidden="true">
+                            <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-search"></use>
+                        </svg>
+                        <span>Filtrar</span>
+                    </button>
+                </p>
+            </fieldset>
+        </form>
+
+        <!-- Tabla Responsiva del Inventario -->
+        <section class="table-responsive" aria-label="Listado de disfraces en inventario">
+            <table class="table table-atelier table-hover">
+                <thead>
+                    <tr>
+                        <th scope="col">SKU</th>
+                        <th scope="col">Disfraz</th>
+                        <th scope="col">Categoría</th>
+                        <th scope="col">Talla</th>
+                        <th scope="col">Piezas Incluidas</th>
+                        <th scope="col">Alquiler</th>
+                        <th scope="col">Garantía</th>
+                        <th scope="col">Estado</th>
+                        {% if session.get('rol') == 'Administrador' %}
+                        <th scope="col" class="text-end">Control Admin</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in disfraces %}
+                    <tr>
+                        <td><code>{{ d.sku | e }}</code></td>
+                        <td class="fw-semibold">{{ d.nombre | e }}</td>
+                        <td>{{ d.categoria | e }}</td>
+                        <td>{{ d.talla | e }}</td>
+                        <td class="small text-taupe">{{ d.piezas | e }}</td>
+                        <td>${{ "%.2f"|format(d.valor_alquiler | float) }}</td>
+                        <td>${{ "%.2f"|format(d.monto_garantia | float) }}</td>
+                        <td>
+                            <span class="status-pill {% if d.estado == 'Disponible' %}status-disponible{% elif d.estado == 'Alquilado' %}status-alquilado{% elif d.estado == 'Danado' %}status-critico{% else %}status-mantenimiento{% endif %}">
+                                {{ d.estado | e }}
+                            </span>
+                        </td>
+                        {% if session.get('rol') == 'Administrador' %}
+                        <td class="text-end">
+                            <button
+                                type="button"
+                                class="btn btn-outline-crimson btn-sm"
+                                data-dialog-open="dialog-confirmar-baja"
+                                data-action-url="{{ url_for('dar_baja_disfraz', disfraz_id=d.id) | e }}"
+                                data-sku="{{ d.sku | e }}"
+                                data-nombre="{{ d.nombre | e }}"
+                                aria-label="Dar de baja el disfraz {{ d.nombre | e }}">
+                                Dar de Baja
+                            </button>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="9" class="text-center py-4 text-taupe">
+                            No se encontraron disfraces registrados con los filtros seleccionados.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    </section>
+</section>
+
+<!-- ==========================================================================
+     4. CONTROL DE TICKETS ACTIVOS, DEVOLUCIONES E INCIDENCIAS (RF-05, RF-06)
+     ========================================================================== -->
+<section class="surface-card mb-4 animate-reveal delay-2" aria-labelledby="titulo-tickets">
+    <header class="section-header-bar">
+        <h2 id="titulo-tickets" class="h6 mb-0 d-flex align-items-center gap-2">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-return"></use>
+            </svg>
+            <span>Tickets de Alquiler, Recepción de Prendas y Liquidación de Garantías</span>
+        </h2>
+        <span class="small text-taupe">Codificación contextual anti-XSS activa (RS-09)</span>
+    </header>
+
+    <section class="p-3 p-md-4 table-responsive" aria-label="Registro histórico y activo de tickets">
+        <table class="table table-atelier table-hover">
+            <thead>
+                <tr>
+                    <th scope="col">Disfraz (SKU)</th>
+                    <th scope="col">Cliente y Documento</th>
+                    <th scope="col">Vigencia (Salida → Límite)</th>
+                    <th scope="col">Garantía / Retención</th>
+                    <th scope="col">Estado de Piezas / Incidencias</th>
+                    <th scope="col">Estado</th>
+                    <th scope="col" class="text-end">Operación</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in tickets %}
+                <tr>
+                    <td>
+                        <code>{{ t.sku | e }}</code>
+                        <span class="d-block small fw-medium">{{ t.disfraz_nombre | e }}</span>
+                    </td>
+                    <td>
+                        <strong class="d-block">{{ t.cliente_nombre | e }}</strong>
+                        <small class="text-taupe">DNI: {{ t.cliente_dni | e }} | Tel: {{ t.cliente_telefono | e }}</small>
+                    </td>
+                    <td class="small">
+                        <span>{{ t.fecha_salida | e }}</span>
+                        <span class="text-taupe">→</span>
+                        <strong>{{ t.fecha_limite_retorno | e }}</strong>
+                    </td>
+                    <td class="small">
+                        <span class="d-block">Depósito: <strong>${{ "%.2f"|format(t.deposito_garantia | float) }}</strong></span>
+                        <span class="d-block" style="color: var(--accent-crimson);">
+                            Retenido: <strong>${{ "%.2f"|format(t.retencion_garantia | float) }}</strong>
+                        </span>
+                    </td>
+                    <td class="small text-taupe">
+                        {{ (t.observaciones_incidencia or t.estado_entrega_piezas) | e }}
+                    </td>
+                    <td>
+                        <span class="status-pill {% if t.estado_ticket == 'Activo' %}status-alquilado{% elif t.estado_ticket == 'Con Incidencia' %}status-critico{% else %}status-disponible{% endif %}">
+                            {{ t.estado_ticket | e }}
+                        </span>
+                    </td>
+                    <td class="text-end">
+                        {% if t.estado_ticket == 'Activo' %}
+                        <button
+                            type="button"
+                            class="btn btn-terracotta btn-sm"
+                            data-dialog-open="dialog-devolucion"
+                            data-action-url="{{ url_for('devolver_ticket', ticket_id=t.id) | e }}"
+                            data-sku="{{ t.sku | e }}"
+                            data-cliente="{{ t.cliente_nombre | e }}"
+                            data-garantia="{{ t.deposito_garantia | e }}"
+                            data-fecha-limite="{{ t.fecha_limite_retorno | e }}">
+                            Liquidar Retorno
+                        </button>
+                        {% else %}
+                        <small class="text-taupe">Cerrado ({{ t.fecha_devolucion_real | e }})</small>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-center py-4 text-taupe">
+                        Aún no existen tickets de alquiler emitidos en el sistema.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</section>
+
+<!-- ==========================================================================
+     5. BITÁCORA INMUTABLE DE AUDITORÍA DE SEGURIDAD (RF-08, RS-14 - SOLO ADMIN)
+     ========================================================================== -->
+{% if session.get('rol') == 'Administrador' %}
+<section class="surface-card mb-4 animate-reveal delay-3" aria-labelledby="titulo-auditoria">
+    <header class="section-header-bar">
+        <h2 id="titulo-auditoria" class="h6 mb-0 d-flex align-items-center gap-2">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-audit"></use>
+            </svg>
+            <span>Bitácora de Auditoría de Operaciones Críticas (RF-08 / RS-14)</span>
+        </h2>
+        <span class="status-pill status-mantenimiento">Solo Lectura Inmutable</span>
+    </header>
+
+    <section class="p-3 p-md-4 table-responsive" style="max-height: 360px;" aria-label="Registros de eventos de seguridad">
+        <table class="table table-atelier table-sm">
+            <thead>
+                <tr>
+                    <th scope="col">Fecha / Hora (UTC)</th>
+                    <th scope="col">Usuario</th>
+                    <th scope="col">Evento</th>
+                    <th scope="col">Detalle Operativo</th>
+                    <th scope="col">IP Origen</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td class="small text-taupe">{{ log.timestamp | e }}</td>
+                    <td class="fw-semibold">{{ log.usuario | e }}</td>
+                    <td><code>{{ log.accion | e }}</code></td>
+                    <td class="small">{{ log.detalle | e }}</td>
+                    <td class="small text-taupe">{{ log.ip_origen | e }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center py-3 text-taupe">Sin eventos registrados.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</section>
+{% endif %}
+
+<!-- ==========================================================================
+     VENTANAS MODALES NATIVAS (<dialog>) — CERO FRAMEWORKS EXTERNOS
+     ========================================================================== -->
+
+<!-- MODAL 1: REGISTRAR NUEVO DISFRAZ EN INVENTARIO (RF-03, RS-07) -->
+<dialog id="dialog-nuevo-disfraz" class="native-modal" aria-labelledby="modal-titulo-disfraz">
+    <header class="modal-header-bar">
+        <h2 id="modal-titulo-disfraz" class="h6 mb-0">Registrar Nuevo Disfraz en Catálogo (RF-03)</h2>
+        <button type="button" class="btn btn-outline-warm btn-sm" data-dialog-close aria-label="Cerrar ventana modal">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-close"></use>
+            </svg>
+        </button>
+    </header>
+
+    <form method="POST" action="{{ url_for('registrar_disfraz') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else session.get('csrf_token', '') | e }}">
+
+        <fieldset class="modal-body-content row g-3 border-0 m-0">
+            <legend class="visually-hidden">Datos técnicos del disfraz y valores de garantía</legend>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="reg-sku" class="form-label">Código SKU</label>
+                <input
+                    type="text"
+                    id="reg-sku"
+                    name="sku"
+                    class="form-control"
+                    required
+                    pattern="[A-Z0-9\-]{3,20}"
+                    maxlength="20"
+                    placeholder="Ej. DIS-EPOC-004">
+                <small class="form-hint">Mayúsculas, números y guiones (3-20 caract.).</small>
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="reg-nombre" class="form-label">Nombre del Disfraz</label>
+                <input
+                    type="text"
+                    id="reg-nombre"
+                    name="nombre"
+                    class="form-control"
+                    required
+                    maxlength="80"
+                    placeholder="Ej. Dama Victoriana">
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="reg-categoria" class="form-label">Categoría</label>
+                <input
+                    type="text"
+                    id="reg-categoria"
+                    name="categoria"
+                    class="form-control"
+                    required
+                    maxlength="40"
+                    placeholder="Ej. Histórico, Fantasía">
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="reg-talla" class="form-label">Talla Oficial</label>
+                <select id="reg-talla" name="talla" class="form-select" required>
+                    <option value="XS">XS</option>
+                    <option value="S">S</option>
+                    <option value="M" selected>M</option>
+                    <option value="L">L</option>
+                    <option value="XL">XL</option>
+                    <option value="Unica">Única</option>
+                </select>
+            </p>
+
+            <p class="col-12 mb-0">
+                <label for="reg-piezas" class="form-label">Detalle de Piezas Incluidas</label>
+                <input
+                    type="text"
+                    id="reg-piezas"
+                    name="piezas"
+                    class="form-control"
+                    required
+                    maxlength="150"
+                    placeholder="Ej. Vestido largo, sombrero de época, guantes de encaje">
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="reg-alquiler" class="form-label">Valor de Alquiler ($ USD)</label>
+                <input
+                    type="number"
+                    id="reg-alquiler"
+                    name="valor_alquiler"
+                    class="form-control"
+                    step="0.01"
+                    min="0.01"
+                    max="10000"
+                    required
+                    placeholder="35.00">
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="reg-garantia" class="form-label">Monto de Garantía ($ USD)</label>
+                <input
+                    type="number"
+                    id="reg-garantia"
+                    name="monto_garantia"
+                    class="form-control"
+                    step="0.01"
+                    min="0.00"
+                    max="10000"
+                    required
+                    placeholder="70.00">
+            </p>
+        </fieldset>
+
+        <footer class="modal-footer-bar">
+            <button type="button" class="btn btn-outline-warm" data-dialog-close>Cancelar</button>
+            <button type="submit" class="btn btn-terracotta">Guardar en Inventario</button>
+        </footer>
+    </form>
+</dialog>
+
+<!-- MODAL 2: EMITIR TICKET DE ALQUILER (RF-05, RS-07) -->
+<dialog id="dialog-emitir-ticket" class="native-modal" aria-labelledby="modal-titulo-ticket">
+    <header class="modal-header-bar">
+        <h2 id="modal-titulo-ticket" class="h6 mb-0">Emitir Nuevo Ticket de Alquiler (RF-05)</h2>
+        <button type="button" class="btn btn-outline-warm btn-sm" data-dialog-close aria-label="Cerrar ventana modal">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-close"></use>
+            </svg>
+        </button>
+    </header>
+
+    <form method="POST" action="{{ url_for('emitir_ticket') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else session.get('csrf_token', '') | e }}">
+
+        <fieldset class="modal-body-content row g-3 border-0 m-0">
+            <legend class="visually-hidden">Datos del cliente, prenda y vigencia del alquiler</legend>
+
+            <p class="col-12 mb-0">
+                <label for="ticket-disfraz-id" class="form-label">Seleccionar Disfraz Disponible</label>
+                <select id="ticket-disfraz-id" name="disfraz_id" class="form-select" required>
+                    <option value="">Seleccione una prenda disponible en stock...</option>
+                    {% for d in disfraces if d.estado == 'Disponible' %}
+                    <option value="{{ d.id | e }}" data-garantia="{{ d.monto_garantia | e }}">
+                        {{ d.sku | e }} — {{ d.nombre | e }} (Talla {{ d.talla | e }} | Alquiler: ${{ "%.2f"|format(d.valor_alquiler | float) }} | Garantía: ${{ "%.2f"|format(d.monto_garantia | float) }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="ticket-cliente-nombre" class="form-label">Nombre Completo del Cliente</label>
+                <input
+                    type="text"
+                    id="ticket-cliente-nombre"
+                    name="cliente_nombre"
+                    class="form-control"
+                    required
+                    maxlength="80"
+                    placeholder="Ej. Valeria Mendoza">
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="ticket-cliente-dni" class="form-label">Cédula / DNI (8 a 13 dígitos)</label>
+                <input
+                    type="text"
+                    id="ticket-cliente-dni"
+                    name="cliente_dni"
+                    class="form-control"
+                    required
+                    pattern="[0-9]{8,13}"
+                    maxlength="13"
+                    placeholder="1712345678">
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="ticket-cliente-telefono" class="form-label">Teléfono de Contacto</label>
+                <input
+                    type="tel"
+                    id="ticket-cliente-telefono"
+                    name="cliente_telefono"
+                    class="form-control"
+                    required
+                    pattern="[0-9\+\-\s]{7,15}"
+                    maxlength="15"
+                    placeholder="0991234567">
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="ticket-deposito-garantia" class="form-label">Depósito de Garantía Recibido ($)</label>
+                <input
+                    type="number"
+                    id="ticket-deposito-garantia"
+                    name="deposito_garantia"
+                    class="form-control"
+                    step="0.01"
+                    min="0.00"
+                    max="10000"
+                    required
+                    placeholder="50.00">
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="ticket-fecha-salida" class="form-label">Fecha de Entrega (Salida)</label>
+                <input
+                    type="date"
+                    id="ticket-fecha-salida"
+                    name="fecha_salida"
+                    class="form-control"
+                    required>
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="ticket-fecha-retorno" class="form-label">Fecha Límite de Retorno</label>
+                <input
+                    type="date"
+                    id="ticket-fecha-retorno"
+                    name="fecha_limite_retorno"
+                    class="form-control"
+                    required>
+            </p>
+
+            <p id="ticket-alerta-fechas" class="col-12 mb-0 small fw-semibold" style="color: var(--accent-crimson);" role="alert" hidden>
+                La fecha límite de retorno debe ser igual o posterior a la fecha de salida (RS-07).
+            </p>
+
+            <p class="col-12 mb-0">
+                <label for="ticket-estado-piezas" class="form-label">Estado de Entrega de las Piezas</label>
+                <input
+                    type="text"
+                    id="ticket-estado-piezas"
+                    name="estado_entrega_piezas"
+                    class="form-control"
+                    required
+                    maxlength="150"
+                    placeholder="Ej. 3 piezas completas, impecables y sin rasgaduras">
+            </p>
+        </fieldset>
+
+        <footer class="modal-footer-bar">
+            <button type="button" class="btn btn-outline-warm" data-dialog-close>Cancelar</button>
+            <button type="submit" class="btn btn-terracotta">Emitir Ticket Oficial</button>
+        </footer>
+    </form>
+</dialog>
+
+<!-- MODAL 3: LIQUIDACIÓN DE DEVOLUCIÓN E INCIDENCIAS (RF-06, RS-09) -->
+<dialog id="dialog-devolucion" class="native-modal" aria-labelledby="modal-titulo-devolucion">
+    <header class="modal-header-bar">
+        <h2 id="modal-titulo-devolucion" class="h6 mb-0">Recepción de Prenda y Liquidación de Garantía (RF-06)</h2>
+        <button type="button" class="btn btn-outline-warm btn-sm" data-dialog-close aria-label="Cerrar ventana modal">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-close"></use>
+            </svg>
+        </button>
+    </header>
+
+    <form id="form-devolucion" method="POST" action="">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else session.get('csrf_token', '') | e }}">
+        <input type="hidden" id="devolucion-garantia-base" value="0">
+        <input type="hidden" id="devolucion-fecha-limite" value="">
+
+        <fieldset class="modal-body-content row g-3 border-0 m-0">
+            <legend class="visually-hidden">Inspección de retorno y cálculo de retención</legend>
+
+            <article class="col-12 surface-sand p-3">
+                <p id="devolucion-resumen-texto" class="mb-1 fw-semibold">Seleccione un ticket activo</p>
+                <p class="mb-0 small text-taupe">
+                    Retención estimada según inspección y fecha:
+                    <strong id="retencion-estimada-monto" style="color: var(--accent-crimson);">$0.00 (0%)</strong>
+                </p>
+            </article>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="select-tipo-incidencia" class="form-label">Resultado de Inspección Física</label>
+                <select id="select-tipo-incidencia" name="tipo_incidencia" class="form-select" required>
+                    <option value="Ninguna">Sin daños ni faltantes (0%)</option>
+                    <option value="Mancha Grave">Mancha Grave (+30% retención)</option>
+                    <option value="Dano Parcial">Daño Parcial / Costura (+50% retención)</option>
+                    <option value="Perdida o Dano Total">Pérdida de Pieza o Daño Total (100%)</option>
+                </select>
+            </p>
+
+            <p class="col-12 col-sm-6 mb-0">
+                <label for="select-nuevo-estado" class="form-label">Siguiente Estado del Disfraz</label>
+                <select id="select-nuevo-estado" name="nuevo_estado_disfraz" class="form-select" required>
+                    <option value="En lavanderia">Enviar a Lavandería / Desinfección</option>
+                    <option value="Disponible">Disponible Inmediatamente</option>
+                    <option value="Danado">Marcar como Dañado (Reparación)</option>
+                </select>
+            </p>
+
+            <p class="col-12 mb-0">
+                <label for="devolucion-observaciones" class="form-label">Observaciones de Recepción / Daños</label>
+                <input
+                    type="text"
+                    id="devolucion-observaciones"
+                    name="observaciones"
+                    class="form-control"
+                    maxlength="200"
+                    placeholder="Ej. Prenda devuelta completa, pasa a lavado estándar">
+                <small class="form-hint">El texto ingresado es sanitizado y codificado contextualmente contra XSS (RS-09).</small>
+            </p>
+        </fieldset>
+
+        <footer class="modal-footer-bar">
+            <button type="button" class="btn btn-outline-warm" data-dialog-close>Cancelar</button>
+            <button type="submit" class="btn btn-terracotta">Confirmar Liquidación</button>
+        </footer>
+    </form>
+</dialog>
+
+<!-- MODAL 4: CONFIRMAR BAJA LÓGICA DE INVENTARIO (RF-03, RS-05 - SOLO ADMIN) -->
+{% if session.get('rol') == 'Administrador' %}
+<dialog id="dialog-confirmar-baja" class="native-modal" aria-labelledby="modal-titulo-baja">
+    <header class="modal-header-bar">
+        <h2 id="modal-titulo-baja" class="h6 mb-0">Confirmar Baja de Inventario (RS-05)</h2>
+        <button type="button" class="btn btn-outline-warm btn-sm" data-dialog-close aria-label="Cerrar ventana modal">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-close"></use>
+            </svg>
+        </button>
+    </header>
+
+    <form id="form-baja-disfraz" method="POST" action="">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else session.get('csrf_token', '') | e }}">
+
+        <section class="modal-body-content">
+            <p class="mb-2">¿Está seguro de que desea retirar del catálogo activo la siguiente prenda?</p>
+            <p class="surface-sand p-3 mb-2 fw-bold" id="baja-disfraz-detalle">SKU</p>
+            <p class="small text-taupe mb-0">
+                Esta acción quedará registrada en la bitácora de auditoría con su identificador de Administrador.
+            </p>
+        </section>
+
+        <footer class="modal-footer-bar">
+            <button type="button" class="btn btn-outline-warm" data-dialog-close>Cancelar</button>
+            <button type="submit" class="btn btn-outline-crimson">Confirmar Baja Definitiva</button>
+        </footer>
+    </form>
+</dialog>
+
+<!-- MODAL 5: GESTIÓN DE CUENTAS DE PERSONAL Y ROLES (RF-02, RS-02, RS-05 - SOLO ADMIN) -->
+<dialog id="dialog-gestion-usuarios" class="native-modal" aria-labelledby="modal-titulo-usuarios">
+    <header class="modal-header-bar">
+        <h2 id="modal-titulo-usuarios" class="h6 mb-0">Gestión de Cuentas del Personal (RF-02 / RBAC)</h2>
+        <button type="button" class="btn btn-outline-warm btn-sm" data-dialog-close aria-label="Cerrar ventana modal">
+            <svg class="icon-svg" aria-hidden="true">
+                <use href="{{ url_for('static', filename='img/icons.svg') }}#icon-close"></use>
+            </svg>
+        </button>
+    </header>
+
+    <section class="modal-body-content">
+        <!-- Formulario para dar de alta personal cumpliendo política RS-02 -->
+        <form method="POST" action="{{ url_for('crear_usuario') }}" class="surface-sand p-3 mb-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else session.get('csrf_token', '') | e }}">
+
+            <fieldset class="row g-2 border-0 p-0 m-0">
+                <legend class="h6 mb-2">Registrar Nuevo Usuario Interno</legend>
+
+                <p class="col-12 col-sm-6 mb-2">
+                    <label for="nuevo-username" class="form-label">Usuario</label>
+                    <input
+                        type="text"
+                        id="nuevo-username"
+                        name="username"
+                        class="form-control"
+                        required
+                        pattern="[a-zA-Z0-9_]{4,30}"
+                        maxlength="30"
+                        placeholder="empleado_turno2">
+                </p>
+
+                <p class="col-12 col-sm-6 mb-2">
+                    <label for="nuevo-rol" class="form-label">Rol de Acceso (RS-05)</label>
+                    <select id="nuevo-rol" name="rol" class="form-select" required>
+                        <option value="Empleado">Empleado de Mostrador</option>
+                        <option value="Administrador">Administrador</option>
+                    </select>
+                </p>
+
+                <p class="col-12 mb-2">
+                    <label for="nuevo-password" class="form-label">Contraseña Robusta (RS-02)</label>
+                    <input
+                        type="password"
+                        id="nuevo-password"
+                        name="password"
+                        class="form-control"
+                        required
+                        minlength="10"
+                        placeholder="Mín. 10 caracteres, Mayús, Minús, Dígito y Símbolo">
+                    <small class="form-hint">Se almacenará exclusivamente con hash adaptativo bcrypt factor 12 (RS-01).</small>
+                </p>
+
+                <p class="col-12 mb-0">
+                    <button type="submit" class="btn btn-slate w-100">Crear Cuenta de Personal</button>
+                </p>
+            </fieldset>
+        </form>
+
+        <!-- Listado de Cuentas Existentes -->
+        <h3 class="h6 mb-2">Cuentas Registradas</h3>
+        <section class="table-responsive" aria-label="Cuentas de personal">
+            <table class="table table-atelier table-sm">
+                <thead>
+                    <tr>
+                        <th scope="col">Usuario</th>
+                        <th scope="col">Rol</th>
+                        <th scope="col">Estado</th>
+                        <th scope="col" class="text-end">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in usuarios %}
+                    <tr>
+                        <td class="fw-semibold">{{ u.username | e }}</td>
+                        <td>{{ u.rol | e }}</td>
+                        <td>
+                            <span class="status-pill {% if u.activo == 1 or u.activo == true %}status-disponible{% else %}status-critico{% endif %}">
+                                {{ 'Activo' if (u.activo == 1 or u.activo == true) else 'Inactivo' }}
+                            </span>
+                        </td>
+                        <td class="text-end">
+                            <form method="POST" action="{{ url_for('cambiar_estado_usuario', user_id=u.id) }}" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else session.get('csrf_token', '') | e }}">
+                                <button type="submit" class="btn btn-outline-warm btn-sm">
+                                    Alternar Estado
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    </section>
+
+    <footer class="modal-footer-bar">
+        <button type="button" class="btn btn-outline-warm" data-dialog-close>Cerrar</button>
+    </footer>
+</dialog>
+{% endif %}
+
+{% endblock %}
